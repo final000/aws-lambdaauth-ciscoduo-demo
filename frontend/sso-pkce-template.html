@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo 4: Duo SSO + PKCE (Frontend-only auth)</title>
+    <style>
+        body { font-family: sans-serif; max-width: 650px; margin: 60px auto; padding: 0 20px; }
+        h1 { color: #333; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 24px; margin: 20px 0; }
+        button { margin-top: 16px; padding: 10px 24px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 16px; padding: 12px; border-radius: 4px; display: none; }
+        .success { background: #dff0d8; color: #3c763d; display: block !important; }
+        .error { background: #f2dede; color: #a94442; display: block !important; }
+        .info { background: #d9edf7; color: #31708f; display: block !important; }
+        pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+        #api-section { display: none; }
+        .note { background: #fff3cd; padding: 12px; border-radius: 4px; margin: 12px 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>Demo 4: Duo SSO + PKCE</h1>
+    <p>Entire auth flow happens in the browser. No backend Lambda for login.
+       Duo's RS256 JWT is used directly with the API.</p>
+
+    <div class="card" id="login-section">
+        <h2>Step 1: Login with Duo SSO</h2>
+        <div class="note">
+            Uses PKCE (Proof Key for Code Exchange) so no client_secret is needed.
+            The browser handles the full OIDC flow directly with Duo.
+        </div>
+        <button id="login-btn">Login with Duo SSO (PKCE)</button>
+    </div>
+
+    <div class="card" id="api-section">
+        <h2>Step 2: Call Protected API</h2>
+        <p>Duo's access token (RS256 JWT — validated directly by Lambda authorizer):</p>
+        <pre id="token-display"></pre>
+        <button id="call-api-btn">Call /pkce/protected</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        // ---- Configuration ----
+        // TODO: Replace these after deployment and Duo setup
+        const DUO_SSO_CLIENT_ID = 'YOUR_DUO_SSO_CLIENT_ID';
+        const DUO_SSO_ISSUER = 'https://sso-XXXXXXXX.sso.duosecurity.com/oidc/DIXXXXXXXXXX';
+        const REDIRECT_URI = 'http://localhost:8000/sso-pkce.html';
+        const API_BASE = 'https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/Prod';
+
+        const statusEl = document.getElementById('status');
+        const loginSection = document.getElementById('login-section');
+        const apiSection = document.getElementById('api-section');
+        const tokenDisplay = document.getElementById('token-display');
+        let accessToken = null;
+
+        function generateRandomString(length) {
+            const array = new Uint8Array(length);
+            crypto.getRandomValues(array);
+            return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode(...new Uint8Array(digest)))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const authCode = urlParams.get('code');
+        const returnedState = urlParams.get('state');
+        if (authCode && returnedState) {
+            window.history.replaceState({}, '', window.location.pathname);
+            exchangeCodeForTokens(authCode, returnedState);
+        }
+
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Redirecting...';
+            const codeVerifier = generateRandomString(64);
+            const codeChallenge = await generateCodeChallenge(codeVerifier);
+            const state = generateRandomString(32);
+            sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+            sessionStorage.setItem('pkce_state', state);
+            const params = new URLSearchParams({
+                client_id: DUO_SSO_CLIENT_ID,
+                response_type: 'code',
+                redirect_uri: REDIRECT_URI,
+                scope: 'openid email profile',
+                state: state,
+                code_challenge: codeChallenge,
+                code_challenge_method: 'S256',
+            });
+            window.location.href = `${DUO_SSO_ISSUER}/authorize?${params}`;
+        });
+
+        async function exchangeCodeForTokens(code, state) {
+            showStatus('Exchanging auth code for tokens...', 'info');
+            const savedState = sessionStorage.getItem('pkce_state');
+            if (state !== savedState) {
+                showStatus('State mismatch — possible CSRF attack', 'error');
+                return;
+            }
+            const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
+            if (!codeVerifier) {
+                showStatus('Missing PKCE code verifier', 'error');
+                return;
+            }
+            sessionStorage.removeItem('pkce_code_verifier');
+            sessionStorage.removeItem('pkce_state');
+            try {
+                const tokenUrl = `${DUO_SSO_ISSUER}/token`;
+                const body = new URLSearchParams({
+                    client_id: DUO_SSO_CLIENT_ID,
+                    grant_type: 'authorization_code',
+                    code: code,
+                    redirect_uri: REDIRECT_URI,
+                    code_verifier: codeVerifier,
+                });
+                const res = await fetch(tokenUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body,
+                });
+                const data = await res.json();
+                if (data.access_token) {
+                    accessToken = data.access_token;
+                    showToken();
+                } else {
+                    showStatus('Token exchange failed: ' + JSON.stringify(data), 'error');
+                }
+            } catch (err) {
+                showStatus('Token exchange error: ' + err.message, 'error');
+            }
+        }
+
+        document.getElementById('call-api-btn').addEventListener('click', async () => {
+            showStatus('Calling protected API...', 'info');
+            try {
+                const res = await fetch(API_BASE + '/pkce/protected', {
+                    headers: { 'Authorization': 'Bearer ' + accessToken },
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showStatus('API Response: ' + JSON.stringify(data, null, 2), 'success');
+                } else {
+                    showStatus('API Error: ' + JSON.stringify(data), 'error');
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            }
+        });
+
+        function showToken() {
+            loginSection.style.display = 'none';
+            apiSection.style.display = 'block';
+            tokenDisplay.textContent = accessToken.substring(0, 60) + '...';
+            showStatus('Duo SSO login succeeded (PKCE). Access token received.', 'success');
+        }
+
+        function showStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = type;
+        }
+    </script>
+</body>
+</html>

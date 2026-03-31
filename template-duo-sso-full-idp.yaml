@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo 3: Duo SSO as Full Identity Provider (Generic OIDC Relying Party)
+
+Parameters:
+  DuoSsoClientId:
+    Type: String
+    Description: Duo SSO Generic OIDC Relying Party Client ID
+  DuoSsoClientSecret:
+    Type: String
+    Description: Duo SSO Generic OIDC Relying Party Client Secret
+    NoEcho: true
+  DuoSsoIssuer:
+    Type: String
+    Description: Duo SSO Issuer URL (e.g. https://sso-XXXXXXXX.sso.duosecurity.com/oidc/DIXXXXXXXXXX)
+  JwtSecret:
+    Type: String
+    Description: Secret key for signing JWTs (any random string)
+    NoEcho: true
+  FrontendUrl:
+    Type: String
+    Description: URL of the SSO frontend page
+    Default: http://localhost:8000/sso.html
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+  SsoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        Authorizers:
+          SsoJwtAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt SsoJwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  DuoSsoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/duo_sso/
+      Handler: app.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          DUO_SSO_CLIENT_ID: !Ref DuoSsoClientId
+          DUO_SSO_CLIENT_SECRET: !Ref DuoSsoClientSecret
+          DUO_SSO_ISSUER: !Ref DuoSsoIssuer
+          JWT_SECRET: !Ref JwtSecret
+          FRONTEND_URL: !Ref FrontendUrl
+      Events:
+        SsoLogin:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SsoApi
+            Path: /sso/login
+            Method: post
+        SsoCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SsoApi
+            Path: /sso/callback
+            Method: get
+
+  SsoJwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/jwt_authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  SsoProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        SsoProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SsoApi
+            Path: /sso/protected
+            Method: get
+            Auth:
+              Authorizer: SsoJwtAuthorizer
+
+Outputs:
+  SsoLoginUrl:
+    Description: "Demo 3: SSO login endpoint"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/sso/login"
+  SsoCallbackUrl:
+    Description: "Demo 3: SSO callback URL (add to Duo SSO Redirect URIs)"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/sso/callback"
+  SsoProtectedUrl:
+    Description: "Demo 3: SSO JWT-protected endpoint"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/sso/protected"
+  SsoApiBase:
+    Description: "Demo 3: SSO API base URL (set this in frontend/sso.html)"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

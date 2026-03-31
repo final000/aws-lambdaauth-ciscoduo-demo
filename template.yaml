@@ -1,0 +1,377 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo: API Gateway Lambda Authorizers with Cisco Duo
+  - Demo 1: Passcode-based auth via Duo Auth API
+  - Demo 2: OIDC Universal Prompt with JWT
+
+Parameters:
+  # ---- Demo 1: Duo Auth API (passcode) ----
+  DuoIntegrationKey:
+    Type: String
+    Description: Duo Auth API Integration Key (IKEY)
+  DuoSecretKey:
+    Type: String
+    Description: Duo Auth API Secret Key (SKEY)
+    NoEcho: true
+  DuoApiHostname:
+    Type: String
+    Description: Duo Auth API Hostname (e.g. api-XXXXXXXX.duosecurity.com)
+
+  # ---- Demo 2: Duo OIDC / Web SDK ----
+  DuoOidcClientId:
+    Type: String
+    Description: Duo Web SDK Client ID (from Application Catalog → Web SDK)
+  DuoOidcClientSecret:
+    Type: String
+    Description: Duo Web SDK Client Secret
+    NoEcho: true
+  DuoOidcApiHost:
+    Type: String
+    Description: Duo Web SDK API Hostname
+  JwtSecret:
+    Type: String
+    Description: Secret key for signing JWTs (any random string)
+    NoEcho: true
+  FrontendUrl:
+    Type: String
+    Description: URL of the frontend page (e.g. http://localhost:8000/index.html or S3 URL)
+    Default: http://localhost:8000/index.html
+
+  # ---- Demo 3: Duo SSO (Generic OIDC Relying Party) ----
+  DuoSsoClientId:
+    Type: String
+    Description: Duo SSO Generic OIDC Relying Party Client ID
+    Default: ""
+  DuoSsoClientSecret:
+    Type: String
+    Description: Duo SSO Generic OIDC Relying Party Client Secret
+    NoEcho: true
+    Default: ""
+  DuoSsoIssuer:
+    Type: String
+    Description: Duo SSO Issuer URL (e.g. https://sso-XXXXXXXX.sso.duosecurity.com/oidc/DIXXXXXXXXXX)
+    Default: ""
+  SsoFrontendUrl:
+    Type: String
+    Description: URL of the SSO frontend page
+    Default: http://localhost:8000/sso.html
+
+  # ---- Demo 4: Duo SSO + PKCE (frontend-only auth) ----
+  DuoPkceClientId:
+    Type: String
+    Description: Duo SSO Generic OIDC RP Client ID (same app, PKCE enabled)
+    Default: ""
+  DuoPkceIssuer:
+    Type: String
+    Description: Duo SSO Issuer URL (same as Demo 3 if reusing the app)
+    Default: ""
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+
+  # ==========================================================
+  # DEMO 1: Passcode-based auth via Duo Auth API
+  # ==========================================================
+
+  DemoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: DuoLambdaAuthorizer
+        Authorizers:
+          DuoLambdaAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          DUO_IKEY: !Ref DuoIntegrationKey
+          DUO_SKEY: !Ref DuoSecretKey
+          DUO_HOST: !Ref DuoApiHostname
+
+  HelloFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        HelloApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DemoApi
+            Path: /hello
+            Method: get
+
+  # ==========================================================
+  # DEMO 2: OIDC Universal Prompt with JWT authorizer
+  # ==========================================================
+
+  OidcApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        Authorizers:
+          JwtLambdaAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt JwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  # Login Lambda — handles /oidc/login and /oidc/duo-callback
+  DuoOidcFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/duo_oidc/
+      Handler: app.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          DUO_CLIENT_ID: !Ref DuoOidcClientId
+          DUO_CLIENT_SECRET: !Ref DuoOidcClientSecret
+          DUO_API_HOST: !Ref DuoOidcApiHost
+          JWT_SECRET: !Ref JwtSecret
+          FRONTEND_URL: !Ref FrontendUrl
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OidcApi
+            Path: /oidc/login
+            Method: post
+        DuoCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OidcApi
+            Path: /oidc/duo-callback
+            Method: get
+
+  # JWT Authorizer Lambda
+  JwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/jwt_authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  # Protected endpoint (behind JWT authorizer)
+  OidcProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        ProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OidcApi
+            Path: /oidc/protected
+            Method: get
+            Auth:
+              Authorizer: JwtLambdaAuthorizer
+
+  # ==========================================================
+  # DEMO 3: Duo SSO as full IdP (Generic OIDC Relying Party)
+  # ==========================================================
+
+  SsoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        Authorizers:
+          SsoJwtAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt SsoJwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  DuoSsoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/duo_sso/
+      Handler: app.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          DUO_SSO_CLIENT_ID: !Ref DuoSsoClientId
+          DUO_SSO_CLIENT_SECRET: !Ref DuoSsoClientSecret
+          DUO_SSO_ISSUER: !Ref DuoSsoIssuer
+          JWT_SECRET: !Ref JwtSecret
+          FRONTEND_URL: !Ref SsoFrontendUrl
+      Events:
+        SsoLogin:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SsoApi
+            Path: /sso/login
+            Method: post
+        SsoCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SsoApi
+            Path: /sso/callback
+            Method: get
+
+  SsoJwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/jwt_authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  SsoProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        SsoProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SsoApi
+            Path: /sso/protected
+            Method: get
+            Auth:
+              Authorizer: SsoJwtAuthorizer
+
+  # ==========================================================
+  # DEMO 4: Duo SSO + PKCE (frontend-only auth, RS256 JWT)
+  # ==========================================================
+
+  PkceApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        Authorizers:
+          DuoRs256Authorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt DuoJwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  DuoJwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/duo_jwt_authorizer/
+      Handler: app.handler
+      Timeout: 10
+      Environment:
+        Variables:
+          DUO_SSO_ISSUER: !Ref DuoPkceIssuer
+          DUO_SSO_CLIENT_ID: !Ref DuoPkceClientId
+
+  PkceProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        PkceProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PkceApi
+            Path: /pkce/protected
+            Method: get
+            Auth:
+              Authorizer: DuoRs256Authorizer
+
+Outputs:
+  # Demo 1
+  PasscodeApiUrl:
+    Description: "Demo 1: Passcode-based API (Duo Auth API)"
+    Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello"
+
+  # Demo 2
+  OidcLoginUrl:
+    Description: "Demo 2: OIDC login endpoint"
+    Value: !Sub "https://${OidcApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/oidc/login"
+  OidcProtectedUrl:
+    Description: "Demo 2: JWT-protected endpoint"
+    Value: !Sub "https://${OidcApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/oidc/protected"
+  OidcApiBase:
+    Description: "Demo 2: API base URL (set this in frontend/index.html)"
+    Value: !Sub "https://${OidcApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+  # Demo 3
+  SsoLoginUrl:
+    Description: "Demo 3: SSO login endpoint"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/sso/login"
+  SsoCallbackUrl:
+    Description: "Demo 3: SSO callback URL (add this to Duo SSO Redirect URIs)"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/sso/callback"
+  SsoProtectedUrl:
+    Description: "Demo 3: SSO JWT-protected endpoint"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/sso/protected"
+  SsoApiBase:
+    Description: "Demo 3: SSO API base URL (set this in frontend/sso.html)"
+    Value: !Sub "https://${SsoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+  # Demo 4
+  PkceProtectedUrl:
+    Description: "Demo 4: PKCE JWT-protected endpoint"
+    Value: !Sub "https://${PkceApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pkce/protected"
+  PkceApiBase:
+    Description: "Demo 4: PKCE API base URL (set this in frontend/sso-pkce.html)"
+    Value: !Sub "https://${PkceApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

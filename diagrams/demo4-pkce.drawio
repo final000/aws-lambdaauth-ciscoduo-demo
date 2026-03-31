@@ -1,0 +1,65 @@
+<mxfile>
+  <diagram name="Demo 4 - Duo SSO + PKCE" id="demo4">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="700">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Demo 4: Duo SSO + PKCE (Frontend-only Auth, RS256 JWT)" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="650" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="browser" value="Browser&#xa;(Frontend)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="80" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="duo" value="Cisco Duo SSO&#xa;(Password + 2FA)&#xa;Duo Directory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="duotoken" value="Duo SSO&#xa;Token Endpoint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="240" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="apigw" value="API Gateway&#xa;(REST API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="400" width="140" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="jwtauth" value="RS256 JWT&#xa;Lambda Authorizer&#xa;(validates via JWKS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="400" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="hello" value="Protected&#xa;Lambda" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="400" width="130" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="jwks" value="Duo JWKS&#xa;Endpoint&#xa;(public keys)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="240" width="130" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="nobackend" value="No backend Lambda&#xa;needed for auth flow" style="text;html=1;fontSize=11;fontStyle=2;fontColor=#999999;align=center;" vertex="1" parent="1">
+          <mxGeometry x="30" y="340" width="180" height="30" as="geometry"/>
+        </mxCell>
+        <!-- Arrows -->
+        <mxCell id="e1" value="1. Redirect to Duo SSO&#xa;(+ PKCE code_challenge)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="browser" target="duo" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="80" y="135"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="2. User enters password + 2FA" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" edge="1" source="duo" target="browser" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="485" y="70"/><mxPoint x="80" y="70"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e3" value="3. Redirect back with auth code" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="duo" target="browser" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="300" y="135"/><mxPoint x="300" y="200"/><mxPoint x="80" y="200"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e4" value="4. Exchange code + code_verifier&#xa;(no client_secret needed)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="browser" target="duotoken" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="80" y="270"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="5. RS256 JWT&#xa;(access_token)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" edge="1" source="duotoken" target="browser" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="250" y="270"/><mxPoint x="250" y="240"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="6. Call /pkce/protected&#xa;with Bearer (Duo JWT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="browser" target="apigw" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="80" y="435"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e7" value="7. Validate JWT" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="apigw" target="jwtauth" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="8. Fetch public keys" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" edge="1" source="jwtauth" target="jwks" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" value="9. Forward if valid" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="jwtauth" target="hello" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

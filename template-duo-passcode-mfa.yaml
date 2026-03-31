@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo 1: Passcode-based Lambda Authorizer with Cisco Duo Auth API
+
+Parameters:
+  DuoIntegrationKey:
+    Type: String
+    Description: Duo Auth API Integration Key (IKEY)
+  DuoSecretKey:
+    Type: String
+    Description: Duo Auth API Secret Key (SKEY)
+    NoEcho: true
+  DuoApiHostname:
+    Type: String
+    Description: Duo Auth API Hostname (e.g. api-XXXXXXXX.duosecurity.com)
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+  DemoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: DuoLambdaAuthorizer
+        Authorizers:
+          DuoLambdaAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          DUO_IKEY: !Ref DuoIntegrationKey
+          DUO_SKEY: !Ref DuoSecretKey
+          DUO_HOST: !Ref DuoApiHostname
+
+  HelloFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        HelloApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DemoApi
+            Path: /hello
+            Method: get
+
+Outputs:
+  ApiUrl:
+    Description: "Demo 1: Passcode-based API endpoint"
+    Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello"

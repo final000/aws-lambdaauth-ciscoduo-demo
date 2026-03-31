@@ -1,0 +1,32 @@
+# SAM build artifacts
+.aws-sam/
+
+# SAM deploy config (contains parameter values including secrets)
+samconfig.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Kiro
+.kiro/
+
+# Frontend files with real config values (use *-template.html as starting point)
+frontend/index.html
+frontend/sso.html
+frontend/sso-pkce.html

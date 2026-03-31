@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo 2: OIDC Universal Prompt (Duo Web SDK) with JWT Lambda Authorizer
+
+Parameters:
+  DuoOidcClientId:
+    Type: String
+    Description: Duo Web SDK Client ID
+  DuoOidcClientSecret:
+    Type: String
+    Description: Duo Web SDK Client Secret
+    NoEcho: true
+  DuoOidcApiHost:
+    Type: String
+    Description: Duo Web SDK API Hostname
+  JwtSecret:
+    Type: String
+    Description: Secret key for signing JWTs (any random string)
+    NoEcho: true
+  FrontendUrl:
+    Type: String
+    Description: URL of the frontend page
+    Default: http://localhost:8000/index.html
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+  OidcApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        Authorizers:
+          JwtLambdaAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt JwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  DuoOidcFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/duo_oidc/
+      Handler: app.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          DUO_CLIENT_ID: !Ref DuoOidcClientId
+          DUO_CLIENT_SECRET: !Ref DuoOidcClientSecret
+          DUO_API_HOST: !Ref DuoOidcApiHost
+          JWT_SECRET: !Ref JwtSecret
+          FRONTEND_URL: !Ref FrontendUrl
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OidcApi
+            Path: /oidc/login
+            Method: post
+        DuoCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OidcApi
+            Path: /oidc/duo-callback
+            Method: get
+
+  JwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/jwt_authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  OidcProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        ProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OidcApi
+            Path: /oidc/protected
+            Method: get
+            Auth:
+              Authorizer: JwtLambdaAuthorizer
+
+Outputs:
+  OidcLoginUrl:
+    Description: "Demo 2: OIDC login endpoint"
+    Value: !Sub "https://${OidcApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/oidc/login"
+  OidcProtectedUrl:
+    Description: "Demo 2: JWT-protected endpoint"
+    Value: !Sub "https://${OidcApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/oidc/protected"
+  OidcApiBase:
+    Description: "Demo 2: API base URL (set this in frontend/index.html)"
+    Value: !Sub "https://${OidcApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

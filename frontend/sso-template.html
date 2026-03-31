@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo 3: Duo SSO (Full IdP) + Lambda Authorizer</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 60px auto; padding: 0 20px; }
+        h1 { color: #333; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 24px; margin: 20px 0; }
+        button { margin-top: 16px; padding: 10px 24px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 16px; padding: 12px; border-radius: 4px; display: none; }
+        .success { background: #dff0d8; color: #3c763d; display: block !important; }
+        .error { background: #f2dede; color: #a94442; display: block !important; }
+        .info { background: #d9edf7; color: #31708f; display: block !important; }
+        pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
+        #api-section { display: none; }
+        .note { background: #fff3cd; padding: 12px; border-radius: 4px; margin: 12px 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>Demo 3: Duo SSO + Lambda Authorizer</h1>
+    <p>Duo handles both login (password) and 2FA. No mock credentials needed.</p>
+
+    <div class="card" id="login-section">
+        <h2>Step 1: Login with Duo SSO</h2>
+        <div class="note">
+            You'll be redirected to Duo's hosted login page where you enter your
+            Duo Directory password and complete 2FA. No password is stored in our app.
+        </div>
+        <button id="login-btn">Login with Duo SSO</button>
+    </div>
+
+    <div class="card" id="api-section">
+        <h2>Step 2: Call Protected API</h2>
+        <p>Your JWT token (issued after Duo SSO login):</p>
+        <pre id="token-display"></pre>
+        <button id="call-api-btn">Call /sso/protected</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        // TODO: Replace with your SsoApiBase stack output after deployment
+        const API_BASE = 'https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/Prod';
+
+        const statusEl = document.getElementById('status');
+        const loginSection = document.getElementById('login-section');
+        const apiSection = document.getElementById('api-section');
+        const tokenDisplay = document.getElementById('token-display');
+        let jwtToken = null;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+        if (tokenFromUrl) {
+            jwtToken = tokenFromUrl;
+            window.history.replaceState({}, '', window.location.pathname);
+            showToken();
+        }
+
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Redirecting...';
+            showStatus('Starting Duo SSO login...', 'info');
+            try {
+                const res = await fetch(API_BASE + '/sso/login', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.duo_auth_url) {
+                    window.location.href = data.duo_auth_url;
+                } else {
+                    showStatus(data.error || 'Login failed', 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Login with Duo SSO';
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Login with Duo SSO';
+            }
+        });
+
+        document.getElementById('call-api-btn').addEventListener('click', async () => {
+            showStatus('Calling protected API...', 'info');
+            try {
+                const res = await fetch(API_BASE + '/sso/protected', {
+                    headers: { 'Authorization': 'Bearer ' + jwtToken },
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showStatus('API Response: ' + JSON.stringify(data, null, 2), 'success');
+                } else {
+                    showStatus('API Error: ' + JSON.stringify(data), 'error');
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            }
+        });
+
+        function showToken() {
+            loginSection.style.display = 'none';
+            apiSection.style.display = 'block';
+            tokenDisplay.textContent = jwtToken.substring(0, 50) + '...';
+            showStatus('Duo SSO login succeeded. JWT token received.', 'success');
+        }
+
+        function showStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = type;
+        }
+    </script>
+</body>
+</html>

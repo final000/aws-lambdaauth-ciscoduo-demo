@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duo OIDC Lambda Authorizer Demo</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 60px auto; padding: 0 20px; }
+        h1 { color: #333; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 24px; margin: 20px 0; }
+        label { display: block; margin: 10px 0 4px; font-weight: bold; }
+        input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { margin-top: 16px; padding: 10px 24px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 16px; padding: 12px; border-radius: 4px; display: none; }
+        .success { background: #dff0d8; color: #3c763d; display: block !important; }
+        .error { background: #f2dede; color: #a94442; display: block !important; }
+        .info { background: #d9edf7; color: #31708f; display: block !important; }
+        pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
+        #api-section { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Duo OIDC + Lambda Authorizer Demo</h1>
+
+    <!-- Step 1: Login -->
+    <div class="card" id="login-section">
+        <h2>Step 1: Login</h2>
+        <p>Mock credentials: <code>demo_user</code> / <code>demo_pass</code> or <code>test_user1</code> / <code>demo_pass</code></p>
+        <form id="login-form">
+            <label for="username">Username</label>
+            <input type="text" id="username" value="test_user1" required>
+            <label for="password">Password</label>
+            <input type="password" id="password" value="demo_pass" required>
+            <button type="submit" id="login-btn">Login &amp; Start Duo 2FA</button>
+        </form>
+    </div>
+
+    <!-- Step 2: Call protected API -->
+    <div class="card" id="api-section">
+        <h2>Step 2: Call Protected API</h2>
+        <p>Your JWT token (from Duo 2FA):</p>
+        <pre id="token-display"></pre>
+        <button id="call-api-btn">Call /oidc/protected</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        // ---- Configuration ----
+        // TODO: Replace with your OidcApiBase stack output after deployment
+        const API_BASE = 'https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/Prod';
+
+        const statusEl = document.getElementById('status');
+        const loginSection = document.getElementById('login-section');
+        const apiSection = document.getElementById('api-section');
+        const tokenDisplay = document.getElementById('token-display');
+        let jwtToken = null;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+        if (tokenFromUrl) {
+            jwtToken = tokenFromUrl;
+            window.history.replaceState({}, '', window.location.pathname);
+            showToken();
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Authenticating...';
+            showStatus('Logging in...', 'info');
+            try {
+                const res = await fetch(API_BASE + '/oidc/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+                const data = await res.json();
+                if (res.ok && data.duo_auth_url) {
+                    showStatus('Redirecting to Duo for 2FA...', 'info');
+                    window.location.href = data.duo_auth_url;
+                } else {
+                    showStatus(data.error || 'Login failed', 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Login & Start Duo 2FA';
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Login & Start Duo 2FA';
+            }
+        });
+
+        document.getElementById('call-api-btn').addEventListener('click', async () => {
+            showStatus('Calling protected API...', 'info');
+            try {
+                const res = await fetch(API_BASE + '/oidc/protected', {
+                    headers: { 'Authorization': 'Bearer ' + jwtToken },
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showStatus('API Response: ' + JSON.stringify(data, null, 2), 'success');
+                } else {
+                    showStatus('API Error: ' + JSON.stringify(data), 'error');
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            }
+        });
+
+        function showToken() {
+            loginSection.style.display = 'none';
+            apiSection.style.display = 'block';
+            tokenDisplay.textContent = jwtToken.substring(0, 50) + '...';
+            showStatus('Duo 2FA succeeded. JWT token received.', 'success');
+        }
+
+        function showStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = type;
+        }
+    </script>
+</body>
+</html>

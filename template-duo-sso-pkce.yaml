@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo 4: Duo SSO + PKCE (Frontend-only auth, RS256 JWT validation)
+
+Parameters:
+  DuoPkceClientId:
+    Type: String
+    Description: Duo SSO Generic OIDC RP Client ID (PKCE enabled)
+  DuoPkceIssuer:
+    Type: String
+    Description: Duo SSO Issuer URL (e.g. https://sso-XXXXXXXX.sso.duosecurity.com/oidc/DIXXXXXXXXXX)
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+  PkceApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        Authorizers:
+          DuoRs256Authorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt DuoJwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 0
+            Identity:
+              Header: Authorization
+
+  DuoJwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/duo_jwt_authorizer/
+      Handler: app.handler
+      Timeout: 10
+      Environment:
+        Variables:
+          DUO_SSO_ISSUER: !Ref DuoPkceIssuer
+          DUO_SSO_CLIENT_ID: !Ref DuoPkceClientId
+
+  PkceProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        PkceProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PkceApi
+            Path: /pkce/protected
+            Method: get
+            Auth:
+              Authorizer: DuoRs256Authorizer
+
+Outputs:
+  PkceProtectedUrl:
+    Description: "Demo 4: PKCE JWT-protected endpoint"
+    Value: !Sub "https://${PkceApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pkce/protected"
+  PkceApiBase:
+    Description: "Demo 4: PKCE API base URL (set this in frontend/sso-pkce.html)"
+    Value: !Sub "https://${PkceApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

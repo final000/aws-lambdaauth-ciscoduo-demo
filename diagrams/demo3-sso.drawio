@@ -1,0 +1,86 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36" version="29.6.6">
+  <diagram name="Demo 3 - Duo SSO Full IdP" id="demo3">
+    <mxGraphModel dx="946" dy="531" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=18;fontStyle=1;align=center;" value="Demo 3: Duo SSO as Full Identity Provider (OIDC)" vertex="1">
+          <mxGeometry height="30" width="550" x="250" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Browser&#xa;(Frontend)" vertex="1">
+          <mxGeometry height="80" width="80" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="apigw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" value="API Gateway&#xa;(REST API)" vertex="1">
+          <mxGeometry height="70" width="140" x="230" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="login" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" value="Login Lambda&#xa;(build Duo SSO&#xa;authorize URL)" vertex="1">
+          <mxGeometry height="70" width="160" x="390" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="duo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="Cisco Duo SSO&#xa;(Password + 2FA)&#xa;Duo Directory" vertex="1">
+          <mxGeometry height="70" width="170" x="720" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="callback" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" value="Callback Lambda&#xa;(exchange code&#xa;→ issue JWT)" vertex="1">
+          <mxGeometry height="70" width="160" x="460" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="jwtauth" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" value="JWT Lambda&#xa;Authorizer" vertex="1">
+          <mxGeometry height="70" width="150" x="460" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="hello" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontStyle=1;" value="Protected&#xa;Lambda" vertex="1">
+          <mxGeometry height="70" width="140" x="720" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="login" value="1. POST /sso/login">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="80" y="135" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="login" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="duo" value="2. Redirect to Duo SSO">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="duo" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" target="browser" value="3. User enters password + 2FA&#xa;(Duo handles both)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="805" y="60" />
+              <mxPoint x="80" y="60" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="callback" value="4. Redirect to /callback&#xa;with auth code">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="80" y="285" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="callback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" target="browser" value="5. Exchange code → JWT">
+          <mxGeometry relative="1" x="0.1429" y="15" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="540" y="220" />
+              <mxPoint x="200" y="220" />
+              <mxPoint x="200" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="jwtauth" value="6. Call /sso/protected&#xa;with Bearer JWT">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="80" y="435" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="apigw" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="jwtauth" value="7. Validate JWT">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="290" y="435" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="jwtauth" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="hello" value="8. Forward if valid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
