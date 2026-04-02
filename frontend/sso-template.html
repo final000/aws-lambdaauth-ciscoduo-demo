@@ -91,6 +91,9 @@
                 const data = await res.json();
                 if (res.ok) {
                     showStatus('API Response: ' + JSON.stringify(data, null, 2), 'success');
+                    if (data.claims) {
+                        tokenDisplay.textContent += '\n\nClaims from authorizer:\n' + JSON.stringify(data.claims, null, 2);
+                    }
                 } else {
                     showStatus('API Error: ' + JSON.stringify(data), 'error');
                 }
