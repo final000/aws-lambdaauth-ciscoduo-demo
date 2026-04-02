@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo 5: Cognito + Duo SSO Federation (no Lambda authorizer)
+  Duo SSO handles login + 2FA, Cognito issues tokens,
+  API Gateway validates tokens natively.
+
+Parameters:
+  DuoSsoClientId:
+    Type: String
+    Description: Duo SSO Generic OIDC RP Client ID
+  DuoSsoClientSecret:
+    Type: String
+    Description: Duo SSO Generic OIDC RP Client Secret
+    NoEcho: true
+  DuoSsoIssuer:
+    Type: String
+    Description: Duo SSO Issuer URL (e.g. https://sso-XXXXXXXX.sso.duosecurity.com/oidc/DIXXXXXXXXXX)
+  CognitoDomainPrefix:
+    Type: String
+    Description: Unique prefix for Cognito Hosted UI domain (e.g. duo-demo-yourname)
+    AllowedPattern: "^[a-z0-9](?:[a-z0-9\\-]{0,61}[a-z0-9])?$"
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+
+  # ---- Cognito User Pool ----
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: duo-cognito-demo-pool
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  # ---- Cognito Domain (for Hosted UI) ----
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+
+  # ---- Duo SSO as OIDC Identity Provider ----
+  DuoIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: DuoSSO
+      ProviderType: OIDC
+      ProviderDetails:
+        client_id: !Ref DuoSsoClientId
+        client_secret: !Ref DuoSsoClientSecret
+        oidc_issuer: !Ref DuoSsoIssuer
+        attributes_request_method: GET
+        authorize_scopes: "openid email profile"
+      AttributeMapping:
+        email: email
+        username: sub
+
+  # ---- Cognito App Client ----
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: DuoIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: duo-cognito-demo-client
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - http://localhost:8000/cognito-callback.html
+      LogoutURLs:
+        - http://localhost:8000/cognito-callback.html
+      SupportedIdentityProviders:
+        - DuoSSO
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  # ---- API Gateway with Cognito Authorizer (no Lambda!) ----
+  CognitoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+
+  # ---- Protected Backend Lambda ----
+  CognitoProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        ProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CognitoApi
+            Path: /cognito/protected
+            Method: get
+
+Outputs:
+  CognitoApiBase:
+    Description: "Demo 5: API base URL"
+    Value: !Sub "https://${CognitoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  CognitoProtectedUrl:
+    Description: "Demo 5: Protected endpoint"
+    Value: !Sub "https://${CognitoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/cognito/protected"
+  CognitoHostedUiUrl:
+    Description: "Demo 5: Cognito Hosted UI login URL"
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:8000/cognito-callback.html"
+  CognitoTokenUrl:
+    Description: "Demo 5: Cognito token endpoint"
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/oauth2/token"
+  UserPoolId:
+    Description: "Demo 5: Cognito User Pool ID"
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: "Demo 5: Cognito App Client ID"
+    Value: !Ref UserPoolClient
+  DuoCallbackUrl:
+    Description: "Demo 5: Add this as Sign-In Redirect URL in Duo SSO app"
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/oauth2/idpresponse"

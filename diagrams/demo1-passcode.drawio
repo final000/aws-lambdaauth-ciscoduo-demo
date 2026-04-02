@@ -8,7 +8,7 @@
           <mxGeometry height="30" width="500" x="300" y="20" as="geometry" />
         </mxCell>
         <mxCell id="client" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Client&#xa;(curl / API)" vertex="1">
-          <mxGeometry height="80" width="80" x="40" y="150" as="geometry" />
+          <mxGeometry height="80" width="80" x="120" y="155" as="geometry" />
         </mxCell>
         <mxCell id="apigw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" value="API Gateway&#xa;(REST API)" vertex="1">
           <mxGeometry height="70" width="140" x="360" y="160" as="geometry" />
@@ -20,7 +20,7 @@
           <mxGeometry height="70" width="150" x="840" y="160" as="geometry" />
         </mxCell>
         <mxCell id="hello" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontStyle=1;" value="Hello&#xa;Lambda" vertex="1">
-          <mxGeometry height="70" width="140" x="600" y="325" as="geometry" />
+          <mxGeometry height="70" width="140" x="360" y="360" as="geometry" />
         </mxCell>
         <mxCell id="e1" edge="1" parent="1" source="client" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" target="apigw" value="1. Bearer username:passcode">
           <mxGeometry relative="1" as="geometry" />
@@ -43,13 +43,6 @@
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="430" y="360" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e6" edge="1" parent="1" source="hello" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" target="client" value="6. Response">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="80" y="355" />
             </Array>
           </mxGeometry>
         </mxCell>

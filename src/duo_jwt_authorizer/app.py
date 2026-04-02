@@ -42,7 +42,16 @@ def handler(event, context):
     if claims:
         principal = claims.get("sub", "unknown")
         print(f"Duo JWT valid for: {principal}")
-        return generate_policy(principal, "Allow", method_arn)
+        policy = generate_policy(principal, "Allow", method_arn)
+        # Pass claims to backend Lambda via authorizer context
+        policy["context"] = {
+            "sub": claims.get("sub", ""),
+            "email": claims.get("email", ""),
+            "scope": claims.get("scope", ""),
+            "iss": claims.get("iss", ""),
+            "exp": claims.get("exp", 0),
+        }
+        return policy
     else:
         print("Duo JWT validation failed")
         return generate_policy("unknown", "Deny", method_arn)

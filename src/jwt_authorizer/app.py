@@ -37,7 +37,15 @@ def handler(event, context):
     if claims:
         username = claims.get("sub", "unknown")
         print(f"JWT valid for user: {username}")
-        return generate_policy(username, "Allow", method_arn)
+        policy = generate_policy(username, "Allow", method_arn)
+        # Pass claims to backend Lambda via authorizer context
+        # Note: context values must be strings, numbers, or booleans
+        policy["context"] = {
+            "sub": claims.get("sub", ""),
+            "iat": claims.get("iat", 0),
+            "exp": claims.get("exp", 0),
+        }
+        return policy
     else:
         print("JWT validation failed")
         return generate_policy("unknown", "Deny", method_arn)

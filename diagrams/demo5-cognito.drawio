@@ -1,0 +1,50 @@
+<mxfile>
+  <diagram name="Demo 5 - Cognito + Duo SSO Federation" id="demo5">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="700">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Demo 5: Cognito + Duo SSO Federation (No Lambda Authorizer)" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="650" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="browser" value="Browser&#xa;(Frontend)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="80" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="cognito" value="Amazon Cognito&#xa;(Hosted UI +&#xa;Token Issuer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="100" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="duo" value="Cisco Duo SSO&#xa;(Password + 2FA)&#xa;Duo Directory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="100" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="apigw" value="API Gateway&#xa;(Cognito Authorizer&#xa;— no Lambda!)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="380" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="hello" value="Protected&#xa;Lambda" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="380" width="140" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="noauth" value="No Lambda Authorizer&#xa;API Gateway validates&#xa;Cognito tokens natively" style="text;html=1;fontSize=11;fontStyle=2;fontColor=#999999;align=center;" vertex="1" parent="1">
+          <mxGeometry x="250" y="460" width="220" height="40" as="geometry"/>
+        </mxCell>
+        <!-- Arrows -->
+        <mxCell id="e1" value="1. Redirect to&#xa;Cognito Hosted UI" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="browser" target="cognito" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="80" y="135"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="2. Cognito redirects&#xa;to Duo SSO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="cognito" target="duo" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="3. User logs in + 2FA" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" edge="1" source="duo" target="cognito" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="645" y="190"/><mxPoint x="365" y="190"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e4" value="4. Cognito issues tokens&#xa;→ redirect to frontend" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;dashed=1;" edge="1" source="cognito" target="browser" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="200" y="135"/><mxPoint x="200" y="260"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="5. Call API with&#xa;Cognito ID token" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="browser" target="apigw" parent="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="80" y="415"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="6. Validate token&#xa;(built-in)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;" edge="1" source="apigw" target="hello" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
