@@ -31,3 +31,4 @@ frontend/index.html
 frontend/sso.html
 frontend/sso-pkce.html
 frontend/cognito-callback.html
+frontend/legacy-login.html

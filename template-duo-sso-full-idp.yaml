@@ -32,6 +32,7 @@ Resources:
   SsoApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo3-duo-sso-full-idp
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"

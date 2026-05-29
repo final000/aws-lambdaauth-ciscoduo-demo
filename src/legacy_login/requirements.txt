@@ -1,0 +1,4 @@
+# No external dependencies — uses only Python standard library
+# In production, you'd add:
+# requests    (to call the real legacy auth API)
+# PyJWT       (for robust JWT handling)

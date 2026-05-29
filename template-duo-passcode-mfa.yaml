@@ -24,6 +24,7 @@ Resources:
   DemoApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo1-duo-passcode-mfa
       StageName: Prod
       Auth:
         DefaultAuthorizer: DuoLambdaAuthorizer

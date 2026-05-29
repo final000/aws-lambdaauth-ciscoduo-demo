@@ -32,6 +32,7 @@ Resources:
   OidcApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo2-duo-oidc-2fa
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"

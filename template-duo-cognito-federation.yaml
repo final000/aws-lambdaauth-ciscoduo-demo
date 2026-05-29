@@ -95,6 +95,7 @@ Resources:
   CognitoApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo5-cognito-federation
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"

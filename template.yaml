@@ -4,6 +4,10 @@ Description: >
   Demo: API Gateway Lambda Authorizers with Cisco Duo
   - Demo 1: Passcode-based auth via Duo Auth API
   - Demo 2: OIDC Universal Prompt with JWT
+  - Demo 3: Duo SSO as full IdP (Generic OIDC RP)
+  - Demo 4: Duo SSO + PKCE (frontend-only auth, RS256 JWT)
+  - Demo 5: Cognito + Duo SSO Federation (no Lambda authorizer)
+  - Demo 6: Traditional Username/Password Auth with JWT
 
 Parameters:
   # ---- Demo 1: Duo Auth API (passcode) ----
@@ -67,6 +71,24 @@ Parameters:
     Description: Duo SSO Issuer URL (same as Demo 3 if reusing the app)
     Default: ""
 
+  # ---- Demo 5: Cognito + Duo SSO Federation ----
+  # Reuses DuoSsoClientId / DuoSsoClientSecret / DuoSsoIssuer from Demo 3.
+  CognitoDomainPrefix:
+    Type: String
+    Description: Unique prefix for Cognito Hosted UI domain (e.g. duo-demo-yourname). Leave blank to skip Demo 5.
+    Default: ""
+    AllowedPattern: "^$|^[a-z0-9](?:[a-z0-9\\-]{0,61}[a-z0-9])?$"
+
+  # ---- Demo 6: Legacy Username/Password Auth ----
+  # Reuses JwtSecret from Demo 2/3.
+  TokenExpiry:
+    Type: Number
+    Description: "Demo 6: JWT token expiry in seconds"
+    Default: 3600
+
+Conditions:
+  DeployCognitoDemo: !Not [!Equals [!Ref CognitoDomainPrefix, ""]]
+
 Globals:
   Function:
     Timeout: 30
@@ -81,6 +103,7 @@ Resources:
   DemoApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo1-duo-passcode-mfa
       StageName: Prod
       Auth:
         DefaultAuthorizer: DuoLambdaAuthorizer
@@ -123,6 +146,7 @@ Resources:
   OidcApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo2-duo-oidc-2fa
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"
@@ -207,6 +231,7 @@ Resources:
   SsoApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo3-duo-sso-full-idp
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"
@@ -288,6 +313,7 @@ Resources:
   PkceApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo4-duo-sso-pkce
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"
@@ -337,6 +363,191 @@ Resources:
             Auth:
               Authorizer: DuoRs256Authorizer
 
+  # ==========================================================
+  # DEMO 5: Cognito + Duo SSO Federation (no Lambda authorizer)
+  # Cognito federates to Duo SSO via OIDC, issues its own tokens,
+  # API Gateway validates them natively. Only deployed when
+  # CognitoDomainPrefix is set.
+  # ==========================================================
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Condition: DeployCognitoDemo
+    Properties:
+      UserPoolName: duo-cognito-demo-pool
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: DeployCognitoDemo
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+
+  DuoIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: DeployCognitoDemo
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: DuoSSO
+      ProviderType: OIDC
+      ProviderDetails:
+        client_id: !Ref DuoSsoClientId
+        client_secret: !Ref DuoSsoClientSecret
+        oidc_issuer: !Ref DuoSsoIssuer
+        attributes_request_method: GET
+        authorize_scopes: "openid email profile"
+      AttributeMapping:
+        email: email
+        username: sub
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Condition: DeployCognitoDemo
+    DependsOn: DuoIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: duo-cognito-demo-client
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - http://localhost:8000/cognito-callback.html
+      LogoutURLs:
+        - http://localhost:8000/cognito-callback.html
+      SupportedIdentityProviders:
+        - DuoSSO
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  CognitoApi:
+    Type: AWS::Serverless::Api
+    Condition: DeployCognitoDemo
+    Properties:
+      Name: demo5-cognito-federation
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+
+  CognitoProtectedFunction:
+    Type: AWS::Serverless::Function
+    Condition: DeployCognitoDemo
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        ProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CognitoApi
+            Path: /cognito/protected
+            Method: get
+
+  # ==========================================================
+  # DEMO 6: Traditional Username/Password Auth with JWT
+  # No Duo — shows the token-exchange pattern with a legacy API.
+  # ==========================================================
+
+  LegacyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: demo6-legacy-auth
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        DefaultAuthorizer: LegacyJwtAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          LegacyJwtAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt LegacyJwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 300
+            Identity:
+              Header: Authorization
+
+  LegacyLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/legacy_login/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+          TOKEN_EXPIRY_SECONDS: !Ref TokenExpiry
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LegacyApi
+            Path: /legacy/login
+            Method: post
+            Auth:
+              Authorizer: NONE
+
+  LegacyJwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/jwt_authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  LegacyProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        LegacyProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LegacyApi
+            Path: /legacy/protected
+            Method: get
+
 Outputs:
   # Demo 1
   PasscodeApiUrl:
@@ -375,3 +586,44 @@ Outputs:
   PkceApiBase:
     Description: "Demo 4: PKCE API base URL (set this in frontend/sso-pkce.html)"
     Value: !Sub "https://${PkceApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+  # Demo 5 (only when CognitoDomainPrefix is set)
+  CognitoApiBase:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: API base URL (set this in frontend/cognito-callback.html)"
+    Value: !Sub "https://${CognitoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  CognitoProtectedUrl:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: Cognito-protected endpoint"
+    Value: !Sub "https://${CognitoApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/cognito/protected"
+  CognitoHostedUiUrl:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: Cognito Hosted UI login URL"
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:8000/cognito-callback.html"
+  CognitoTokenUrl:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: Cognito token endpoint"
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/oauth2/token"
+  CognitoUserPoolId:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: Cognito User Pool ID"
+    Value: !Ref UserPool
+  CognitoUserPoolClientId:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: Cognito App Client ID"
+    Value: !Ref UserPoolClient
+  CognitoDuoCallbackUrl:
+    Condition: DeployCognitoDemo
+    Description: "Demo 5: Add this as Sign-In Redirect URL in the Duo SSO app"
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/oauth2/idpresponse"
+
+  # Demo 6
+  LegacyApiBase:
+    Description: "Demo 6: API base URL (set this in frontend/legacy-login.html)"
+    Value: !Sub "https://${LegacyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  LegacyLoginUrl:
+    Description: "Demo 6: Login endpoint"
+    Value: !Sub "https://${LegacyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/legacy/login"
+  LegacyProtectedUrl:
+    Description: "Demo 6: JWT-protected endpoint"
+    Value: !Sub "https://${LegacyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/legacy/protected"

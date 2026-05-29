@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demo 6: Traditional Username/Password Auth with JWT Lambda Authorizer.
+  Shows the token-exchange pattern: client sends credentials to /login,
+  gets back a JWT, then uses it for subsequent API calls.
+  No external IdP required — simulates a legacy auth API.
+
+Parameters:
+  JwtSecret:
+    Type: String
+    Description: Secret key for signing/verifying JWTs (any random string, keep it secret)
+    NoEcho: true
+  TokenExpiry:
+    Type: Number
+    Description: JWT token expiry in seconds
+    Default: 3600
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+
+Resources:
+
+  # ---- API Gateway ----
+  LegacyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: demo6-legacy-auth
+      StageName: Prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Auth:
+        DefaultAuthorizer: JwtLambdaAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          JwtLambdaAuthorizer:
+            FunctionPayloadType: TOKEN
+            FunctionArn: !GetAtt JwtAuthorizerFunction.Arn
+            AuthorizationResultTtlInSeconds: 300
+            Identity:
+              Header: Authorization
+
+  # ---- Login Lambda (public — no authorizer) ----
+  LegacyLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/legacy_login/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+          TOKEN_EXPIRY_SECONDS: !Ref TokenExpiry
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LegacyApi
+            Path: /legacy/login
+            Method: post
+            Auth:
+              Authorizer: NONE
+
+  # ---- JWT Authorizer Lambda (reused from Demo 2/3) ----
+  JwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/jwt_authorizer/
+      Handler: app.handler
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  # ---- Protected Backend Lambda ----
+  LegacyProtectedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/hello/
+      Handler: app.handler
+      Events:
+        ProtectedApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LegacyApi
+            Path: /legacy/protected
+            Method: get
+
+Outputs:
+  LegacyApiBase:
+    Description: "Demo 6: API base URL (set this in frontend/legacy-login.html)"
+    Value: !Sub "https://${LegacyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  LegacyLoginUrl:
+    Description: "Demo 6: Login endpoint"
+    Value: !Sub "https://${LegacyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/legacy/login"
+  LegacyProtectedUrl:
+    Description: "Demo 6: JWT-protected endpoint"
+    Value: !Sub "https://${LegacyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/legacy/protected"

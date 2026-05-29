@@ -20,6 +20,7 @@ Resources:
   PkceApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: demo4-duo-sso-pkce
       StageName: Prod
       Cors:
         AllowOrigin: "'*'"
