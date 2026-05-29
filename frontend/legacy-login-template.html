@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo 6: Traditional Username/Password Login</title>
+    <style>
+        body { font-family: sans-serif; max-width: 650px; margin: 60px auto; padding: 0 20px; }
+        h1 { color: #333; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 24px; margin: 20px 0; }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input { width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { margin-top: 16px; padding: 10px 24px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 16px; padding: 12px; border-radius: 4px; display: none; }
+        .success { background: #dff0d8; color: #3c763d; display: block !important; }
+        .error { background: #f2dede; color: #a94442; display: block !important; }
+        .info { background: #d9edf7; color: #31708f; display: block !important; }
+        pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+        #api-section { display: none; }
+        .note { background: #fff3cd; padding: 12px; border-radius: 4px; margin: 12px 0; font-size: 14px; }
+        #logout-btn { background: #d9534f; margin-left: 8px; }
+        #logout-btn:hover { background: #c9302c; }
+    </style>
+</head>
+<body>
+    <h1>Demo 6: Username/Password + JWT</h1>
+    <p>Traditional login against a legacy auth API. App issues its own JWT, Lambda authorizer validates it.</p>
+
+    <!-- Step 1: Login -->
+    <div class="card" id="login-section">
+        <h2>Step 1: Login</h2>
+        <div class="note">
+            Credentials are sent to <code>POST /legacy/login</code>. On success, the server
+            verifies against the legacy auth API and returns a signed JWT.
+            Token is stored in memory only (not localStorage).
+        </div>
+        <form id="loginForm">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" placeholder="demo_user" required>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" placeholder="demo_pass" required>
+            <button type="submit" id="login-btn">Login</button>
+        </form>
+        <div class="note" style="margin-top: 16px; background: #e8f5e9;">
+            <strong>Test credentials:</strong> demo_user / demo_pass, test_user / test_pass, admin / admin123
+        </div>
+    </div>
+
+    <!-- Step 2: Call protected API -->
+    <div class="card" id="api-section">
+        <h2>Step 2: Call Protected API</h2>
+        <p>Your JWT (stored in memory, expires in <span id="expiry-display"></span>):</p>
+        <pre id="token-display"></pre>
+        <p><strong>Decoded payload:</strong></p>
+        <pre id="payload-display"></pre>
+        <button id="call-api-btn">Call GET /legacy/protected</button>
+        <button id="logout-btn">Logout</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        // ---- Configuration ----
+        // Replace after deployment with your LegacyApiBase stack output
+        const API_BASE = 'YOUR_API_BASE_URL_HERE';
+
+        const statusEl = document.getElementById('status');
+        const loginSection = document.getElementById('login-section');
+        const apiSection = document.getElementById('api-section');
+        const tokenDisplay = document.getElementById('token-display');
+        const payloadDisplay = document.getElementById('payload-display');
+        const expiryDisplay = document.getElementById('expiry-display');
+
+        // Token stored in memory only — not in localStorage or sessionStorage
+        let accessToken = null;
+
+        // ---- Login ----
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Logging in...';
+            showStatus('Authenticating...', 'info');
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch(API_BASE + '/legacy/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.token) {
+                    accessToken = data.token;
+                    showLoggedInState(data);
+                } else {
+                    showStatus('Login failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }
+        });
+
+        // ---- Call protected API ----
+        document.getElementById('call-api-btn').addEventListener('click', async () => {
+            if (!accessToken) {
+                showStatus('No token — please login first', 'error');
+                return;
+            }
+            showStatus('Calling protected API...', 'info');
+
+            try {
+                const res = await fetch(API_BASE + '/legacy/protected', {
+                    headers: { 'Authorization': 'Bearer ' + accessToken },
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    showStatus('API Response:\n' + JSON.stringify(data, null, 2), 'success');
+                } else if (res.status === 401 || res.status === 403) {
+                    showStatus('Token expired or invalid. Please login again.', 'error');
+                    logout();
+                } else {
+                    showStatus('API Error: ' + JSON.stringify(data), 'error');
+                }
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            }
+        });
+
+        // ---- Logout ----
+        document.getElementById('logout-btn').addEventListener('click', logout);
+
+        function logout() {
+            accessToken = null;
+            loginSection.style.display = 'block';
+            apiSection.style.display = 'none';
+            showStatus('Logged out. Token cleared from memory.', 'info');
+        }
+
+        // ---- UI helpers ----
+        function showLoggedInState(data) {
+            loginSection.style.display = 'none';
+            apiSection.style.display = 'block';
+            tokenDisplay.textContent = accessToken.substring(0, 60) + '...';
+
+            // Decode payload for display (NOT for security decisions)
+            try {
+                const parts = accessToken.split('.');
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                payloadDisplay.textContent = JSON.stringify(payload, null, 2);
+
+                const expiresIn = payload.exp - Math.floor(Date.now() / 1000);
+                expiryDisplay.textContent = Math.floor(expiresIn / 60) + ' minutes';
+            } catch (e) {
+                payloadDisplay.textContent = '(could not decode)';
+            }
+
+            showStatus('Login succeeded! JWT stored in memory.', 'success');
+        }
+
+        function showStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = type;
+        }
+    </script>
+</body>
+</html>
